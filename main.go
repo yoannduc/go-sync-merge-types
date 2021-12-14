@@ -40,7 +40,6 @@ type MergeHashMap struct {
 func (m *MergeHashMap) SetTypeOne(k string, v *TypeOne) {
 	m.Lock()
 	defer m.Unlock()
-	log.Println("Entering")
 	_, ok := m.m[k]
 	if !ok {
 		m.m[k] = &MergeType{Name: k}
@@ -51,7 +50,6 @@ func (m *MergeHashMap) SetTypeOne(k string, v *TypeOne) {
 func (m *MergeHashMap) SetTypeTwo(k string, v *TypeTwo) {
 	m.Lock()
 	defer m.Unlock()
-	log.Println("Entering")
 	_, ok := m.m[k]
 	if !ok {
 		m.m[k] = &MergeType{Name: k}
@@ -73,6 +71,10 @@ func (m *MergeHashMap) ToSend(k string) (*MergeType, bool) {
 	}
 
 	return nil, false
+}
+
+func NewMergeHashMap() *MergeHashMap {
+	return &MergeHashMap{m: make(map[string]*MergeType)}
 }
 
 func TypeOneChannel(wg *sync.WaitGroup, nb int) <-chan *TypeOne {
@@ -99,7 +101,6 @@ func TypeTwoChannel(wg *sync.WaitGroup, nb int) <-chan *TypeTwo {
 	go func() {
 		defer close(out)
 		for i := 0; i < nb; i++ {
-			log.Printf("i2 | %T | %v\n", i, i)
 			out <- &TypeTwo{
 				Name:                 strconv.Itoa(i),
 				SpecificTypeTwoValue: i,
@@ -113,14 +114,14 @@ func TypeTwoChannel(wg *sync.WaitGroup, nb int) <-chan *TypeTwo {
 func MergeChan(nb int) <-chan *MergeType {
 	out := make(chan *MergeType)
 	wg := new(sync.WaitGroup)
-	m := &MergeHashMap{m: make(map[string]*MergeType)}
+	m := NewMergeHashMap()
 
 	ct1 := TypeOneChannel(wg, nb)
 	ct2 := TypeTwoChannel(wg, nb)
 
 	go func() {
+		defer wg.Done()
 		for v := range ct1 {
-			log.Printf("v1 | %T | %v\n", v, v)
 			n := v.Name
 			m.SetTypeOne(n, v)
 
@@ -128,11 +129,10 @@ func MergeChan(nb int) <-chan *MergeType {
 				out <- mt
 			}
 		}
-		wg.Done()
 	}()
 	go func() {
+		defer wg.Done()
 		for v := range ct2 {
-			log.Printf("v2 | %T | %v\n", v, v)
 			n := v.Name
 			m.SetTypeTwo(n, v)
 
@@ -140,17 +140,10 @@ func MergeChan(nb int) <-chan *MergeType {
 				out <- mt
 			}
 		}
-		wg.Done()
 	}()
 
 	go func() {
-		// log.Printf("wg | %T | %v\n", wg, wg)
 		wg.Wait()
-		// if j, err := jsoniter.MarshalToString(m); err == nil {
-		// 	log.Printf("m | %T | %v\n", j, j)
-		// } else {
-		// 	log.Printf("m | %T | %v\n", m, m)
-		// }
 		m.Purge()
 		close(out)
 	}()
